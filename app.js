@@ -127,11 +127,11 @@ Example: !search shoes
 });
 
 // Message_create event - triggers for all messages including bot's messages
-client.on('message_create', async msg => {
-    // Check if message is from the bot itself
-    const isFromMe = msg.fromMe;
-    console.log(`Message ${isFromMe ? 'from bot' : 'from user'}:`, msg.body);
-});
+// client.on('message_create', async msg => {
+//     // Check if message is from the bot itself
+//     const isFromMe = msg.fromMe;
+//     console.log(`Message ${isFromMe ? 'from bot' : 'from user'}:`, msg.body);
+// });
 
 // Client events
 client.on('qr', (qr) => {
