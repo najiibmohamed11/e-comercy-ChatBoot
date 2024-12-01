@@ -1,17 +1,11 @@
 const { Client, LocalAuth, MessageMedia, Buttons } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const mongoose = require('mongoose');
+const processMessage = require('./gemini');
+const { populateDatabase } = require('./sampleData');
+const product = require('./model/product');
 
-// Product Schema
-const productSchema = new mongoose.Schema({
-    name: String,
-    description: String,
-    price: Number,
-    imageUrl: String,
-    category: String
-});
 
-const Product = mongoose.model('Product', productSchema);
 
 // Connect to MongoDB
 mongoose.connect('mongodb://localhost:27017/ecommerce').then(() => {
@@ -19,7 +13,7 @@ mongoose.connect('mongodb://localhost:27017/ecommerce').then(() => {
 }).catch(err => {
     console.error('MongoDB connection error:', err);
 });
-
+// populateDatabase()
 // Initialize WhatsApp client
 const client = new Client({
     authStrategy: new LocalAuth({
@@ -31,16 +25,93 @@ const client = new Client({
     }
 });
 
-// Handle product search
+
+// Translation map for common Somali shopping terms
+const somaliToEnglishMap = {
+    'kabo': ['shoes', 'footwear'],
+    'shaati': ['shirt', 't-shirt'],
+    'surwaal': ['pants', 'trousers'],
+    'garan': ['dress'],
+    'kabaha': ['shoes'],
+    'dhar': ['clothes', 'clothing'],
+    'malaay': ['fish'],
+    'hilib': ['meat'],
+    'bariis': ['rice'],
+    // Add more mappings as needed
+};
+
+const brandKeywords = ['nike', 'adidas', 'puma', 'gucci', 'apple', 'samsung']; // Add more brands
+
+// Enhanced search function
 async function searchProducts(query) {
     try {
-        return await Product.find({
-            $or: [
-                { name: { $regex: query, $options: 'i' } },
-                { description: { $regex: query, $options: 'i' } },
-                { category: { $regex: query, $options: 'i' } }
+        // 1. Normalize and split the query
+        const words = query.toLowerCase().trim().split(/\s+/);
+        
+        // 2. Process each word through the translation map
+        let searchTerms = [];
+        let brandTerms = [];
+        
+        for (const word of words) {
+            // Check if it's a brand
+            if (brandKeywords.includes(word.toLowerCase())) {
+                brandTerms.push(word.toLowerCase());
+                continue;
+            }
+            
+            // Check for Somali translations
+            if (somaliToEnglishMap[word]) {
+                searchTerms.push(...somaliToEnglishMap[word]);
+            } else {
+                searchTerms.push(word);
+            }
+        }
+        
+        // 3. Build the search query
+        const searchQuery = {
+            $and: [
+                {
+                    $or: [
+                        { name: { $regex: searchTerms.join('|'), $options: 'i' } },
+                        { description: { $regex: searchTerms.join('|'), $options: 'i' } },
+                        { category: { $regex: searchTerms.join('|'), $options: 'i' } },
+                        { keywords: { $in: searchTerms } },
+                        { somaliKeywords: { $in: words } },      // Original Somali words
+                        { englishKeywords: { $in: searchTerms } } // Translated English words
+                    ]
+                }
             ]
-        }).limit(5);
+        };
+        
+        // Add brand filter if brand terms exist
+        if (brandTerms.length > 0) {
+            searchQuery.$and.push({
+                $or: [
+                    { brand: { $in: brandTerms } },
+                    { name: { $regex: brandTerms.join('|'), $options: 'i' } }
+                ]
+            });
+        }
+
+        // 4. Execute search with scoring
+        const products = await product.aggregate([
+            { $match: searchQuery },
+            { 
+                $addFields: {
+                    searchScore: {
+                        $add: [
+                            { $cond: [{ $regexMatch: { input: "$name", regex: new RegExp(searchTerms.join('|'), 'i') } }, 3, 0] },
+                            { $cond: [{ $regexMatch: { input: "$brand", regex: new RegExp(brandTerms.join('|'), 'i') } }, 2, 0] },
+                            { $cond: [{ $regexMatch: { input: "$category", regex: new RegExp(searchTerms.join('|'), 'i') } }, 1, 0] }
+                        ]
+                    }
+                }
+            },
+            { $sort: { searchScore: -1 } },
+            { $limit: 5 }
+        ]);
+
+        return products;
     } catch (error) {
         console.error('Search error:', error);
         return [];
@@ -76,10 +147,11 @@ client.on('message', async msg => {
     console.log('Received message from:', msg.from);
     try {
         const chat = await msg.getChat();
-        console.log('chat',chat)
+        // console.log('chat',chat)
         
         if (msg.body.startsWith('!search ')) {
             const query = msg.body.slice(8);
+            console.log('how query would look',uery);
             const products = await searchProducts(query);
             
             if (products.length === 0) {
@@ -119,6 +191,35 @@ Available commands:
 Example: !search shoes
             `;
             await msg.reply(helpMessage);
+        }else{
+            const promt_repsons =await processMessage(msg.body);
+            console.log('thi is it',promt_repsons);
+            if(promt_repsons.type==='GENERAL_CHAT'){
+                await msg.reply(promt_repsons.response)
+            }
+            else if(promt_repsons.type==='PRODUCT_SEARCH'){
+                const product_Result=await searchProducts(promt_repsons.productName)
+                console.log(product_Result)
+                for(let i=0; i<product_Result.length; i++ ){
+                    console.log(product_Result)
+                    const formattedProduct = await formatProductMessage(product_Result[i]);
+                    try {
+                        if (formattedProduct.media) {
+                            // Send image with caption
+                            await chat.sendMessage(formattedProduct.media, {
+                                caption: formattedProduct.messageText
+                            });
+                        } else {
+                            // Send text only if no image
+                            await msg.reply(formattedProduct.messageText);
+                        }
+                    } catch (sendError) {
+                        console.error('Error sending message:', sendError);
+                        await msg.reply(formattedProduct.messageText);
+                    }
+                }
+
+            }
         }
     } catch (error) {
         console.error('Message handling error:', error);

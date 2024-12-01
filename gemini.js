@@ -80,7 +80,7 @@ async function processMessage(message) {
         
         // Clean up the response before parsing
         const cleanResponse = response.replace(/```json\n|\n```/g, '').trim();
-        console.log('clean response',cleanResponse)
+        // console.log('clean response',cleanResponse)
         return JSON.parse(cleanResponse);
     } catch (error) {
         console.error('Gemini processing error:', error);
@@ -93,21 +93,21 @@ async function processMessage(message) {
 
 
 // Tusaalayaal
-const testMessages = [
-    "asc",
-    "Waxaan rabaa malaay salmon fish",
-    "zxpow waxaan rabaa kabo nike eh ma heli karaa",
-    "Imisa ayuu yahay iPhone kii 15?"
-];
+// const testMessages = [
+//     "asc",
+//     "Waxaan rabaa malaay salmon fish",
+//     "zxpow waxaan rabaa kabo nike eh ma heli karaa",
+//     "Imisa ayuu yahay iPhone kii 15?"
+// ];
 
-async function runTests() {
-    for (const message of testMessages) {
-        console.log("\nFariinta macmiilka:", message);
-        await processMessage(message);
-    }
-}
+// async function runTests() {
+//     for (const message of testMessages) {
+//         console.log("\nFariinta macmiilka:", message);
+//         await processMessage(message);
+//     }
+// }
 
-runTests();
+// runTests();
 
 
 module.exports=processMessage;
