@@ -108,3 +108,6 @@ async function runTests() {
 }
 
 runTests();
+
+
+module.exports=processMessage;
